@@ -1,0 +1,38 @@
+[
+  {
+    "id": "alert-1",
+    "priority": "Urgent",
+    "type": "stock_risk",
+    "title": "Samsung Galaxy A56 may stock out in ~3 days",
+    "detail": "Current stock: 6 units. Sales velocity has risen to ~2/day over the last 10 days.",
+    "recommendation": "Reorder 20 units from Sharma Mobile Distributors (₹20,800/unit, 2-day delivery, 4.5★ reliability) — chosen over the cheaper TechWorld Wholesale (₹20,500) because its 5-day delivery would cause an actual stockout.",
+    "action_required": "approve_purchase_order"
+  },
+  {
+    "id": "alert-2",
+    "priority": "Urgent",
+    "type": "receivables",
+    "title": "₹48,000 overdue across 3 customers",
+    "detail": "Shah Electronics Retail (₹22,000, 12 days overdue, chronic late payer) is the priority.",
+    "recommendation": "Follow-up messages drafted for all 3, ranked by amount × days overdue.",
+    "action_required": "approve_messages"
+  },
+  {
+    "id": "alert-3",
+    "priority": "Attention",
+    "type": "sales_anomaly",
+    "title": "JBL Flip 6 sales down 40% this week",
+    "detail": "Investigation found the product was out of stock for 4 of the last 7 days — the drop is a supply gap, not falling demand.",
+    "recommendation": "No customer-facing action needed; flag for faster restocking next time.",
+    "action_required": "acknowledge"
+  },
+  {
+    "id": "alert-4",
+    "priority": "Opportunity",
+    "type": "sales_anomaly",
+    "title": "Audio accessories sales up 35% this week",
+    "detail": "External context search suggests this lines up with upcoming festival/wedding season gifting demand.",
+    "recommendation": "Consider a small stock buffer on boAt Airdopes and Realme Buds ahead of the season.",
+    "action_required": "acknowledge"
+  }
+]
