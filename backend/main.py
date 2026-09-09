@@ -22,21 +22,35 @@ app.add_middleware(
 def inventory_analyzer() -> str:
     """Analyzes inventory risk using products.csv and sales_history.csv. Also provides available supplier options for reordering."""
     base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "data")
+    from datetime import datetime, timedelta
     
     # Calculate velocity from sales history
-    sales = {}
+    sales_data = []
     try:
         with open(os.path.join(base_dir, 'sales_history.csv'), 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 pid = row['product_id']
+                date_obj = datetime.strptime(row['date'], '%Y-%m-%d')
                 units = int(row['units_sold'])
-                sales[pid] = sales.get(pid, 0) + units
+                sales_data.append((pid, date_obj, units))
     except Exception as e:
         print("Error reading sales:", e)
         
-    DAYS = 60 # Assume the history is 60 days
-    
+    sales = {}
+    velocity_days = 10
+    if sales_data:
+        max_date = max(d[1] for d in sales_data)
+        cutoff_date = max_date - timedelta(days=10)
+        recent_sales = [d for d in sales_data if d[1] > cutoff_date]
+        
+        min_recent_date = min(d[1] for d in recent_sales) if recent_sales else max_date
+        actual_span = (max_date - min_recent_date).days + 1
+        velocity_days = min(10, max(1, actual_span))
+        
+        for pid, date, units in recent_sales:
+            sales[pid] = sales.get(pid, 0) + units
+            
     results = []
     try:
         with open(os.path.join(base_dir, 'products.csv'), 'r', encoding='utf-8') as f:
@@ -48,7 +62,7 @@ def inventory_analyzer() -> str:
                 
                 total_sold = sales.get(pid, 0)
                 # If we have sales data, use it; else fallback to the CSV's static velocity
-                velocity = total_sold / DAYS if total_sold > 0 else float(row.get('sales_velocity', 0))
+                velocity = total_sold / velocity_days if total_sold > 0 else float(row.get('sales_velocity', 0))
                 days_left = stock / velocity if velocity > 0 else 999
                 
                 results.append({
@@ -114,8 +128,12 @@ manager_agent = Agent(
     description="A manager agent that provides a morning brief.",
     tools=[inventory_analyzer, receivables_analyzer],
     system_prompt="""You generate morning briefs as a JSON array. Run the inventory analyzer and receivables analyzer tools to get stock risk, supplier data, and receivables risk. 
-Find products with stock risk (days until stockout < 10 days).
-Use the available supplier data to write a highly detailed recommendation (e.g., recommend a specific supplier based on delivery days, reliability, and price).
+Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore products that already have 0 stock).
+For each product with stock risk:
+- If days until stockout < 7, set priority to "Urgent".
+- If 7 <= days until stockout <= 21, set priority to "Attention".
+
+For each product with stock risk, use the available supplier data to write a highly detailed, CUSTOM recommendation tailored to THAT specific product (e.g., recommend a specific supplier based on delivery days, reliability, and price). Do NOT copy the example text.
 
 Also find customers with high receivables risk (e.g. high risk score or > 7 days overdue) and create alerts for them.
 
@@ -123,20 +141,20 @@ Return a single JSON array of BOTH types of alerts in exactly this format:
 [
   {
     "id": "alert-1",
-    "priority": "Urgent",
+    "priority": "[Urgent or Attention]",
     "type": "stock_risk",
-    "title": "Product Name may stock out in X days",
-    "detail": "Current stock: Y units. Sales velocity is Z/day.",
-    "recommendation": "Reorder 20 units from Sharma Mobile Distributors (₹20,800/unit, 2-day delivery, 4.5★ reliability) — chosen over the cheaper TechWorld Wholesale (₹20,500) because its 5-day delivery would cause an actual stockout.",
+    "title": "[Product Name] may stock out in [X] days",
+    "detail": "Current stock: [Y] units. Sales velocity is [Z]/day.",
+    "recommendation": "[Write a detailed recommendation here, mentioning specific supplier names, prices, and delivery times from the tool data. Do NOT use this placeholder text.]",
     "action_required": "approve_purchase_order"
   },
   {
     "id": "alert-2",
     "priority": "Attention",
     "type": "receivables_risk",
-    "title": "Customer Name is X days overdue",
-    "detail": "Amount: ₹Y. Customer has a history of Z.",
-    "recommendation": "Send a formal reminder email immediately, followed by a phone call to the owner tomorrow morning.",
+    "title": "[Customer Name] is [X] days overdue",
+    "detail": "Amount: ₹[Y]. Customer has a history of [Z].",
+    "recommendation": "[Write a detailed recommendation here.]",
     "action_required": "send_reminder_email"
   }
 ]
