@@ -76,16 +76,50 @@ def inventory_analyzer() -> str:
         "available_suppliers": suppliers
     })
 
+@tool
+def receivables_analyzer() -> str:
+    """Analyzes receivables risk by ranking customers based on amount overdue and days overdue."""
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "data")
+    
+    results = []
+    try:
+        with open(os.path.join(base_dir, 'receivables.csv'), 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                amount = float(row['amount_overdue'])
+                days = int(row['days_overdue'])
+                risk_score = amount * days
+                
+                results.append({
+                    "id": row['id'],
+                    "customer_name": row['customer_name'],
+                    "amount_overdue": amount,
+                    "days_overdue": days,
+                    "notes": row['notes'],
+                    "risk_score": risk_score
+                })
+    except Exception as e:
+        print("Error reading receivables:", e)
+        
+    # Sort descending by risk score
+    results.sort(key=lambda x: x['risk_score'], reverse=True)
+    
+    return json.dumps({
+        "receivables_risk": results
+    })
+
 manager_agent = Agent(
     model=GeminiModel(model_id="gemini-3.6-flash"),
     name="ManagerAgent",
     description="A manager agent that provides a morning brief.",
-    tools=[inventory_analyzer],
-    system_prompt="""You generate morning briefs as a JSON array. Run the inventory analyzer tool to get stock risk and supplier data. 
+    tools=[inventory_analyzer, receivables_analyzer],
+    system_prompt="""You generate morning briefs as a JSON array. Run the inventory analyzer and receivables analyzer tools to get stock risk, supplier data, and receivables risk. 
 Find products with stock risk (days until stockout < 10 days).
 Use the available supplier data to write a highly detailed recommendation (e.g., recommend a specific supplier based on delivery days, reliability, and price).
 
-Return a JSON array of alerts in exactly this format:
+Also find customers with high receivables risk (e.g. high risk score or > 7 days overdue) and create alerts for them.
+
+Return a single JSON array of BOTH types of alerts in exactly this format:
 [
   {
     "id": "alert-1",
@@ -95,6 +129,15 @@ Return a JSON array of alerts in exactly this format:
     "detail": "Current stock: Y units. Sales velocity is Z/day.",
     "recommendation": "Reorder 20 units from Sharma Mobile Distributors (₹20,800/unit, 2-day delivery, 4.5★ reliability) — chosen over the cheaper TechWorld Wholesale (₹20,500) because its 5-day delivery would cause an actual stockout.",
     "action_required": "approve_purchase_order"
+  },
+  {
+    "id": "alert-2",
+    "priority": "Attention",
+    "type": "receivables_risk",
+    "title": "Customer Name is X days overdue",
+    "detail": "Amount: ₹Y. Customer has a history of Z.",
+    "recommendation": "Send a formal reminder email immediately, followed by a phone call to the owner tomorrow morning.",
+    "action_required": "send_reminder_email"
   }
 ]
 Output ONLY raw JSON (no markdown formatting or backticks)."""
