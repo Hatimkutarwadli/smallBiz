@@ -20,7 +20,7 @@ app.add_middleware(
 
 @tool
 def inventory_analyzer() -> str:
-    """Analyzes inventory risk using products.csv and sales_history.csv. Also provides available supplier options for reordering."""
+    """Analyzes inventory risk using products.csv and sales_history.csv."""
     base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "data")
     from datetime import datetime, timedelta
     
@@ -75,19 +75,59 @@ def inventory_analyzer() -> str:
     except Exception as e:
         print("Error reading products:", e)
         
-    # Read suppliers to provide context to the LLM for recommendations
+    return json.dumps({
+        "inventory_risk": results
+    })
+
+@tool
+def supplier_analyzer(product_id: str, days_until_stockout: float) -> str:
+    """Analyzes available suppliers for a product and recommends the best option considering delivery days vs stockout window."""
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "data")
+    
     suppliers = []
     try:
         with open(os.path.join(base_dir, 'suppliers.csv'), 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                suppliers.append(row)
+                suppliers.append({
+                    "id": row['id'],
+                    "name": row['name'],
+                    "price": float(row['price']),
+                    "delivery_days": int(row['delivery_days']),
+                    "reliability": float(row['reliability'])
+                })
     except Exception as e:
         print("Error reading suppliers:", e)
-
+        return json.dumps({"error": str(e)})
+        
+    if not suppliers:
+        return "No suppliers found."
+        
+    valid_suppliers = [s for s in suppliers if s['delivery_days'] < days_until_stockout]
+    
+    if not valid_suppliers:
+        best_supplier = min(suppliers, key=lambda s: s['delivery_days'])
+        reason = f"All suppliers exceed the {days_until_stockout} days window. Recommended the fastest option: {best_supplier['name']} (₹{int(best_supplier['price']):,}/unit, {best_supplier['delivery_days']}-day delivery, {best_supplier['reliability']}★ reliability)."
+    else:
+        best_supplier = min(valid_suppliers, key=lambda s: s['price'])
+        reason = f"Reorder from {best_supplier['name']} (₹{int(best_supplier['price']):,}/unit, {best_supplier['delivery_days']}-day delivery, {best_supplier['reliability']}★ reliability) — chosen because it is fast enough to prevent stockout ({best_supplier['delivery_days']} days < {days_until_stockout}), and offers the best price among valid options."
+        
     return json.dumps({
-        "inventory_risk": results,
-        "available_suppliers": suppliers
+        "recommended_supplier": best_supplier,
+        "reason": reason,
+        "all_suppliers_considered": suppliers
+    })
+
+@tool
+def prepare_purchase_order(supplier_id: str, product_id: str, quantity: int) -> str:
+    """Prepares a draft purchase order for a given supplier and product."""
+    return json.dumps({
+        "status": "draft_prepared",
+        "po_number": f"PO-{supplier_id}-{product_id}-001",
+        "supplier_id": supplier_id,
+        "product_id": product_id,
+        "quantity": quantity,
+        "message": f"Draft PO prepared for {quantity} units."
     })
 
 @tool
@@ -126,39 +166,42 @@ manager_agent = Agent(
     model=GeminiModel(model_id="gemini-3.6-flash"),
     name="ManagerAgent",
     description="A manager agent that provides a morning brief.",
-    tools=[inventory_analyzer, receivables_analyzer],
-    system_prompt="""You generate morning briefs as a JSON array. Run the inventory analyzer and receivables analyzer tools to get stock risk, supplier data, and receivables risk. 
-Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore products that already have 0 stock).
-For each product with stock risk:
-- If days until stockout < 7, set priority to "Urgent".
-- If 7 <= days until stockout <= 21, set priority to "Attention".
+    tools=[inventory_analyzer, supplier_analyzer, prepare_purchase_order, receivables_analyzer],
+    system_prompt="""You generate morning briefs as a JSON array. 
+Step 1: Run the inventory analyzer. Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore 0 stock).
+Step 2: For each product with stock risk, run the supplier_analyzer to get the best supplier.
+Step 3: Run the prepare_purchase_order tool to draft a PO with a suggested quantity (e.g., 20).
+Step 4: Run the receivables analyzer to find high risk customers (e.g. high risk score or > 7 days overdue).
 
-For each product with stock risk, use the available supplier data to write a highly detailed, CUSTOM recommendation tailored to THAT specific product (e.g., recommend a specific supplier based on delivery days, reliability, and price). Do NOT copy the example text.
+Format all currency amounts as whole numbers with commas (e.g., ₹22,000 instead of ₹22000.0). Do NOT output decimals for currency.
+Do NOT include placeholder brackets like '[' or ']' in your final output strings.
 
-Also find customers with high receivables risk (e.g. high risk score or > 7 days overdue) and create alerts for them.
+Return a single JSON array of BOTH types of alerts.
+For stock_risk, set priority to "Urgent" (<7 days) or "Attention" (7-21 days). Include the suggested quantity field.
 
-Return a single JSON array of BOTH types of alerts in exactly this format:
+Format:
 [
   {
     "id": "alert-1",
-    "priority": "[Urgent or Attention]",
+    "priority": "Urgent",
     "type": "stock_risk",
-    "title": "[Product Name] may stock out in [X] days",
-    "detail": "Current stock: [Y] units. Sales velocity is [Z]/day.",
-    "recommendation": "[Write a detailed recommendation here, mentioning specific supplier names, prices, and delivery times from the tool data. Do NOT use this placeholder text.]",
-    "action_required": "approve_purchase_order"
+    "title": "Product Name may stock out in X days",
+    "detail": "Current stock: Y units. Sales velocity is Z/day.",
+    "recommendation": "Use supplier_analyzer reason here.",
+    "action_required": "approve_purchase_order",
+    "suggested_quantity": 20
   },
   {
     "id": "alert-2",
     "priority": "Attention",
     "type": "receivables_risk",
-    "title": "[Customer Name] is [X] days overdue",
-    "detail": "Amount: ₹[Y]. Customer has a history of [Z].",
-    "recommendation": "[Write a detailed recommendation here.]",
+    "title": "Customer Name is X days overdue",
+    "detail": "Amount: ₹22,000. Customer has a history of chronic late payments.",
+    "recommendation": "Write a detailed recommendation here.",
     "action_required": "send_reminder_email"
   }
 ]
-Output ONLY raw JSON (no markdown formatting or backticks)."""
+Output ONLY raw JSON."""
 )
 
 @app.get("/morning-brief")
