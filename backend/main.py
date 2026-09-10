@@ -349,13 +349,13 @@ def sales_analyzer() -> str:
 # --- Manager Agent Setup ---
 
 manager_agent = Agent(
-    model=GeminiModel(model_id="gemini-3.6-flash"),
+    model=GeminiModel(model_id="gemini-3.5-flash"),
     name="ManagerAgent",
     description="A manager agent that provides a morning brief.",
     tools=[inventory_analyzer, supplier_analyzer, prepare_purchase_order, receivables_analyzer, prepare_payment_reminder, sales_analyzer, external_context_search],
     system_prompt="""You generate morning briefs as a JSON array. 
 Step 1: Run the inventory analyzer. Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore 0 stock). For each, run supplier_analyzer and prepare_purchase_order.
-Step 2: Run the receivables analyzer to find high risk customers. For high risk customers, run prepare_payment_reminder.
+Step 2: Run the receivables analyzer. Create a receivables_risk alert for every customer returned by the analyzer. For high risk customers, run prepare_payment_reminder to draft follow-up messages.
 Step 3: Run the sales_analyzer to find sales anomalies. For any anomaly where needs_external_context is true, run external_context_search with a query like "upcoming festival wedding season India [current month]" to find an explanation.
 
 IMPORTANT POLICIES:
@@ -364,13 +364,14 @@ IMPORTANT POLICIES:
 - Do NOT include placeholder brackets like '[' or ']' in your final output strings.
 
 Return a single JSON array of ALL alerts.
+For stock_risk, evaluate days_until_stockout: if < 7 days, set priority to "Urgent". If 7-21 days, set priority to "Attention".
 For sales anomalies, use type "sales_anomaly". If it's an unexplained spike, priority is "Opportunity" and action is "boost_ads". If it's a drop caused by stockouts, priority is "Urgent" and action is "review_supply_chain".
 
 Format Example:
 [
   {
     "id": "alert-1",
-    "priority": "Urgent",
+    "priority": "EVALUATE: Urgent or Attention",
     "type": "stock_risk",
     "title": "Product Name may stock out in X days",
     "detail": "Current stock: Y units. Sales velocity is Z/day.",
@@ -582,6 +583,9 @@ def get_morning_brief():
             else:
                 alert["reasoning_trail"] = [s for s in all_steps if s["tool"] == "sales_analyzer"]
                 
+        # Sort by priority tier
+        priority_map = {"Urgent": 0, "Attention": 1, "Opportunity": 2}
+        alerts.sort(key=lambda x: priority_map.get(x.get("priority", ""), 99))
         return alerts
     except Exception as e:
         print(f"LLM agent fallback activated: {e}")

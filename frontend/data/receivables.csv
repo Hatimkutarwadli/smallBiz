@@ -1,4 +1,4 @@
 id,customer_name,amount_overdue,days_overdue,notes
 rec-1,Shah Electronics Retail,22000,12,chronic late payer
-rec-2,Metro Gadgets,16000,5,first time late
-rec-3,City Mobiles,10000,2,good history
+rec-2,Patel Traders,18000,5,first time late
+rec-3,Mehta & Sons,8000,2,good history
