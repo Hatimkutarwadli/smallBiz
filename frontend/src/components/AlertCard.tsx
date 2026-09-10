@@ -244,15 +244,25 @@ export default function AlertCard({ alert }: AlertCardProps) {
           </div>
         )}
 
-        {isCustomerContactAction && isEditing && (
+        {isCustomerContactAction && (
           <div className="mt-3 p-3 bg-slate-50 rounded-md border border-slate-200 space-y-2">
-            <label className="font-medium text-slate-700 text-xs uppercase tracking-wide">Edit Draft Message:</label>
-            <textarea 
-              value={draftMessage}
-              rows={2}
-              onChange={(e) => setDraftMessage(e.target.value)}
-              className="w-full border border-slate-300 rounded p-2 text-xs focus:outline-none focus:ring-2 focus:border-[var(--color-teal)] bg-white"
-            />
+            <label className="font-medium text-slate-700 text-xs uppercase tracking-wide">
+              {isEditing ? 'Edit Draft Message:' : 'Drafted Message:'}
+            </label>
+            {isEditing ? (
+              <textarea 
+                value={draftMessage}
+                rows={3}
+                onChange={(e) => setDraftMessage(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-xs focus:outline-none focus:ring-2 focus:border-[var(--color-teal)] bg-white"
+              />
+            ) : (
+              <div className="text-sm text-slate-700 italic bg-white p-2.5 rounded border border-slate-200 leading-relaxed relative">
+                <span className="absolute -left-1.5 -top-1.5 text-2xl text-slate-300 select-none">"</span>
+                {draftMessage}
+                <span className="absolute -bottom-3.5 -right-1.5 text-2xl text-slate-300 select-none rotate-180">"</span>
+              </div>
+            )}
           </div>
         )}
 
