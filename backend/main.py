@@ -268,13 +268,13 @@ def sales_analyzer() -> str:
     return json.dumps({"sales_anomalies": anomalies})
 
 manager_agent = Agent(
-    model=GeminiModel(model_id="gemini-3.6-flash"),
+    model=GeminiModel(model_id="gemini-3.5-flash"),
     name="ManagerAgent",
     description="A manager agent that provides a morning brief.",
     tools=[inventory_analyzer, supplier_analyzer, prepare_purchase_order, receivables_analyzer, sales_analyzer, external_context_search],
     system_prompt="""You generate morning briefs as a JSON array. 
 Step 1: Run the inventory analyzer. Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore 0 stock). For each, run supplier_analyzer and prepare_purchase_order.
-Step 2: Run the receivables analyzer to find high risk customers.
+Step 2: Run the receivables analyzer. Create a receivables_risk alert for EVERY SINGLE customer returned by the analyzer. Do not skip any customers.
 Step 3: Run the sales_analyzer to find sales anomalies. For any anomaly where needs_external_context is true, run external_context_search with a query like "upcoming festival wedding season India [current month]" to find an explanation.
 
 Format all currency amounts as whole numbers with commas (e.g., ₹22,000 instead of ₹22000.0). Do NOT output decimals for currency.
@@ -343,7 +343,13 @@ def get_morning_brief():
         if response_text.endswith("```"):
             response_text = response_text[:-3]
             
-        return json.loads(response_text.strip())
+        alerts = json.loads(response_text.strip())
+        
+        # Sort by priority tier
+        priority_map = {"Urgent": 0, "Attention": 1, "Opportunity": 2}
+        alerts.sort(key=lambda x: priority_map.get(x.get("priority", ""), 99))
+        
+        return alerts
     except Exception as e:
         return {"error": str(e)}
 
