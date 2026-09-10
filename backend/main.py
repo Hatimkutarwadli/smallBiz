@@ -365,6 +365,7 @@ IMPORTANT POLICIES:
 
 Return a single JSON array of ALL alerts.
 For stock_risk, evaluate days_until_stockout: if < 7 days, set priority to "Urgent". If 7-21 days, set priority to "Attention".
+The `suggested_quantity` for stock_risk alerts MUST be calculated exactly as: (sales_velocity_per_day * 10). For example, if velocity is 2.0/day, suggest 20 units. Do not suggest a 30-day supply.
 For sales anomalies, use type "sales_anomaly". If it's an unexplained spike, priority is "Opportunity" and action is "boost_ads". If it's a drop caused by stockouts, priority is "Urgent" and action is "review_supply_chain".
 
 Format Example:
