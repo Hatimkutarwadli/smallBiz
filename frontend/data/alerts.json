@@ -6,7 +6,49 @@
     "title": "Samsung Galaxy A56 may stock out in ~3 days",
     "detail": "Current stock: 6 units. Sales velocity has risen to ~2/day over the last 10 days.",
     "recommendation": "Reorder 20 units from Sharma Mobile Distributors (₹20,800/unit, 2-day delivery, 4.5★ reliability) — chosen over the cheaper TechWorld Wholesale (₹20,500) because its 5-day delivery would cause an actual stockout.",
-    "action_required": "approve_purchase_order"
+    "action_required": "approve_purchase_order",
+    "suggested_quantity": 20,
+    "action_details": {
+      "action_type": "approve_purchase_order",
+      "product_id": "prod-1",
+      "product_name": "Samsung Galaxy A56",
+      "supplier_id": "sup-1",
+      "supplier_name": "Sharma Mobile Distributors",
+      "quantity": 20,
+      "unit_price": 20800,
+      "delivery_days": 2,
+      "status": "pending_approval"
+    },
+    "reasoning_trail": [
+      {
+        "step": 1,
+        "tool": "inventory_analyzer",
+        "input": {},
+        "summary": "Scanned products & trailing 10-day sales history. Detected Samsung Galaxy A56 at 6 units with 2.0/day velocity (3.0 days until stockout).",
+        "timestamp": "09:00:01"
+      },
+      {
+        "step": 2,
+        "tool": "supplier_analyzer",
+        "input": {
+          "product_id": "prod-1",
+          "days_until_stockout": 3.0
+        },
+        "summary": "Evaluated suppliers: Sharma Mobile Distributors (2-day delivery < 3.0-day window, ₹20,800) beats TechWorld Wholesale (5-day delivery causes stockout, ₹20,500). Selected Sharma.",
+        "timestamp": "09:00:03"
+      },
+      {
+        "step": 3,
+        "tool": "prepare_purchase_order",
+        "input": {
+          "supplier_id": "sup-1",
+          "product_id": "prod-1",
+          "quantity": 20
+        },
+        "summary": "Prepared draft PO-sup-1-prod-1-001 for 20 units. GATED: Spends money — requires explicit approval via POST /approve-action before placing order.",
+        "timestamp": "09:00:04"
+      }
+    ]
   },
   {
     "id": "alert-2",
@@ -14,8 +56,37 @@
     "type": "receivables",
     "title": "₹48,000 overdue across 3 customers",
     "detail": "Shah Electronics Retail (₹22,000, 12 days overdue, chronic late payer) is the priority.",
-    "recommendation": "Follow-up messages drafted for all 3, ranked by amount × days overdue.",
-    "action_required": "approve_messages"
+    "recommendation": "Follow-up messages drafted for all 3, ranked by amount × days overdue. Gated behind explicit approval before contacting customers.",
+    "action_required": "send_reminder_email",
+    "action_details": {
+      "action_type": "send_reminder_email",
+      "customer_id": "rec-1",
+      "customer_name": "Shah Electronics Retail",
+      "amount": 22000,
+      "days_overdue": 12,
+      "draft_message": "Dear Shah Electronics Retail, this is a gentle reminder regarding invoice balance of ₹22,000 which is 12 days past due. Please confirm your payment schedule at your earliest convenience.",
+      "status": "pending_approval"
+    },
+    "reasoning_trail": [
+      {
+        "step": 1,
+        "tool": "receivables_analyzer",
+        "input": {},
+        "summary": "Ranked overdue accounts by risk score (amount × days overdue). Identified Shah Electronics Retail as top risk (₹22,000 × 12 days = 264,000 risk score; chronic late payer).",
+        "timestamp": "09:00:05"
+      },
+      {
+        "step": 2,
+        "tool": "prepare_payment_reminder",
+        "input": {
+          "customer_name": "Shah Electronics Retail",
+          "amount_overdue": 22000,
+          "days_overdue": 12
+        },
+        "summary": "Drafted formal payment reminder message. GATED: Contacts customer — requires explicit approval via POST /approve-action before dispatching.",
+        "timestamp": "09:00:06"
+      }
+    ]
   },
   {
     "id": "alert-3",
@@ -24,7 +95,21 @@
     "title": "JBL Flip 6 sales down 40% this week",
     "detail": "Investigation found the product was out of stock for 4 of the last 7 days — the drop is a supply gap, not falling demand.",
     "recommendation": "No customer-facing action needed; flag for faster restocking next time.",
-    "action_required": "acknowledge"
+    "action_required": "review_supply_chain",
+    "action_details": {
+      "action_type": "review_supply_chain",
+      "product_name": "JBL Flip 6",
+      "status": "acknowledged"
+    },
+    "reasoning_trail": [
+      {
+        "step": 1,
+        "tool": "sales_analyzer",
+        "input": {},
+        "summary": "Compared trailing 7-day sales to prior average. Detected 40% drop for JBL Flip 6. Cross-referenced stock_history.csv: Product was out of stock for 4 of the last 7 days (internally explained supply gap).",
+        "timestamp": "09:00:07"
+      }
+    ]
   },
   {
     "id": "alert-4",
@@ -33,6 +118,29 @@
     "title": "Audio accessories sales up 35% this week",
     "detail": "External context search suggests this lines up with upcoming festival/wedding season gifting demand.",
     "recommendation": "Consider a small stock buffer on boAt Airdopes and Realme Buds ahead of the season.",
-    "action_required": "acknowledge"
+    "action_required": "boost_ads",
+    "action_details": {
+      "action_type": "boost_ads",
+      "category": "Audio Accessories",
+      "status": "acknowledged"
+    },
+    "reasoning_trail": [
+      {
+        "step": 1,
+        "tool": "sales_analyzer",
+        "input": {},
+        "summary": "Detected 35% sales spike across audio accessories (boAt Airdopes, Realme Buds). No internal stockout explanation; flagged needs_external_context = true.",
+        "timestamp": "09:00:08"
+      },
+      {
+        "step": 2,
+        "tool": "external_context_search",
+        "input": {
+          "query": "upcoming festival wedding season India audio electronics demand"
+        },
+        "summary": "Web search confirmed upcoming festival and wedding season in India driving ~40% spike in electronics and audio gifting demand.",
+        "timestamp": "09:00:10"
+      }
+    ]
   }
 ]
