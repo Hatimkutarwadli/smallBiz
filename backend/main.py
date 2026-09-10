@@ -281,13 +281,14 @@ Format all currency amounts as whole numbers with commas (e.g., ₹22,000 instea
 Do NOT include placeholder brackets like '[' or ']' in your final output strings.
 
 Return a single JSON array of ALL alerts.
+For stock_risk, evaluate days_until_stockout: if < 7 days, set priority to "Urgent". If 7-21 days, set priority to "Attention".
 For sales anomalies, use type "sales_anomaly". If it's an unexplained spike, priority is "Opportunity" and action is "boost_ads". If it's a drop caused by stockouts, priority is "Urgent" and action is "review_supply_chain".
 
 Format Example:
 [
   {
     "id": "alert-1",
-    "priority": "Urgent",
+    "priority": "EVALUATE: Urgent or Attention",
     "type": "stock_risk",
     "title": "Product Name may stock out in X days",
     "detail": "Current stock: Y units. Sales velocity is Z/day.",
