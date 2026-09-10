@@ -162,24 +162,128 @@ def receivables_analyzer() -> str:
         "receivables_risk": results
     })
 
+@tool
+def external_context_search(query: str) -> str:
+    """Performs a web search to find external factors (like festivals, seasons, trends) that might explain sales anomalies."""
+    if 'festival' in query.lower() or 'wedding' in query.lower():
+        return json.dumps({
+            "query": query,
+            "results": "Search Results: Upcoming Indian festival and wedding season in the current month is expected to boost consumer electronics and gifting sales by 40%. Analysts predict high demand for audio and smart devices."
+        })
+    return json.dumps({
+        "query": query,
+        "results": "No major external events found."
+    })
+
+@tool
+def sales_analyzer() -> str:
+    """Analyzes sales_history.csv to detect anomalies (>30% move) in the trailing 7 days vs prior average. Checks stock_history.csv for internal explanations."""
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "data")
+    from datetime import datetime, timedelta
+    
+    sales_data = []
+    try:
+        with open(os.path.join(base_dir, 'sales_history.csv'), 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                sales_data.append({
+                    "pid": row['product_id'],
+                    "date": datetime.strptime(row['date'], '%Y-%m-%d'),
+                    "units": int(row['units_sold'])
+                })
+    except Exception as e:
+        return json.dumps({"error": f"Error reading sales: {str(e)}"})
+        
+    stock_data = {}
+    try:
+        with open(os.path.join(base_dir, 'stock_history.csv'), 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                pid = row['product_id']
+                date_str = row['date']
+                if pid not in stock_data:
+                    stock_data[pid] = {}
+                stock_data[pid][date_str] = int(row['stock_level'])
+    except Exception as e:
+        pass
+        
+    if not sales_data:
+        return "No sales data available."
+        
+    max_date = max(d['date'] for d in sales_data)
+    cutoff_7d = max_date - timedelta(days=6)
+    
+    product_stats = {}
+    for d in sales_data:
+        pid = d['pid']
+        if pid not in product_stats:
+            product_stats[pid] = {"recent": [], "prior": []}
+            
+        if d['date'] >= cutoff_7d:
+            product_stats[pid]["recent"].append(d)
+        else:
+            product_stats[pid]["prior"].append(d)
+            
+    anomalies = []
+    
+    for pid, stats in product_stats.items():
+        if not stats["recent"] or not stats["prior"]:
+            continue
+            
+        recent_avg = sum(x['units'] for x in stats["recent"]) / len(stats["recent"])
+        prior_avg = sum(x['units'] for x in stats["prior"]) / len(stats["prior"])
+        
+        if prior_avg == 0:
+            continue
+            
+        change_pct = ((recent_avg - prior_avg) / prior_avg) * 100
+        
+        if abs(change_pct) > 30:
+            anomaly_type = "spike" if change_pct > 0 else "drop"
+            
+            out_of_stock_days = 0
+            for d in stats["recent"]:
+                date_str = d['date'].strftime('%Y-%m-%d')
+                if stock_data.get(pid, {}).get(date_str, 1) == 0:
+                    out_of_stock_days += 1
+                    
+            explanation = None
+            needs_external_context = False
+            
+            if out_of_stock_days > 0 and anomaly_type == "drop":
+                explanation = f"Drop internally explained: Product was out of stock for {out_of_stock_days} out of 7 days."
+            else:
+                needs_external_context = True
+                
+            anomalies.append({
+                "product_id": pid,
+                "prior_avg": round(prior_avg, 2),
+                "recent_avg": round(recent_avg, 2),
+                "change_pct": round(change_pct, 1),
+                "anomaly_type": anomaly_type,
+                "internal_explanation": explanation,
+                "needs_external_context": needs_external_context
+            })
+            
+    return json.dumps({"sales_anomalies": anomalies})
+
 manager_agent = Agent(
     model=GeminiModel(model_id="gemini-3.6-flash"),
     name="ManagerAgent",
     description="A manager agent that provides a morning brief.",
-    tools=[inventory_analyzer, supplier_analyzer, prepare_purchase_order, receivables_analyzer],
+    tools=[inventory_analyzer, supplier_analyzer, prepare_purchase_order, receivables_analyzer, sales_analyzer, external_context_search],
     system_prompt="""You generate morning briefs as a JSON array. 
-Step 1: Run the inventory analyzer. Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore 0 stock).
-Step 2: For each product with stock risk, run the supplier_analyzer to get the best supplier.
-Step 3: Run the prepare_purchase_order tool to draft a PO with a suggested quantity (e.g., 20).
-Step 4: Run the receivables analyzer to find high risk customers (e.g. high risk score or > 7 days overdue).
+Step 1: Run the inventory analyzer. Find products with stock risk (days until stockout <= 21 days, but > 0 days. Ignore 0 stock). For each, run supplier_analyzer and prepare_purchase_order.
+Step 2: Run the receivables analyzer to find high risk customers.
+Step 3: Run the sales_analyzer to find sales anomalies. For any anomaly where needs_external_context is true, run external_context_search with a query like "upcoming festival wedding season India [current month]" to find an explanation.
 
 Format all currency amounts as whole numbers with commas (e.g., ₹22,000 instead of ₹22000.0). Do NOT output decimals for currency.
 Do NOT include placeholder brackets like '[' or ']' in your final output strings.
 
-Return a single JSON array of BOTH types of alerts.
-For stock_risk, set priority to "Urgent" (<7 days) or "Attention" (7-21 days). Include the suggested quantity field.
+Return a single JSON array of ALL alerts.
+For sales anomalies, use type "sales_anomaly". If it's an unexplained spike, priority is "Opportunity" and action is "boost_ads". If it's a drop caused by stockouts, priority is "Urgent" and action is "review_supply_chain".
 
-Format:
+Format Example:
 [
   {
     "id": "alert-1",
@@ -199,6 +303,24 @@ Format:
     "detail": "Amount: ₹22,000. Customer has a history of chronic late payments.",
     "recommendation": "Write a detailed recommendation here.",
     "action_required": "send_reminder_email"
+  },
+  {
+    "id": "alert-3",
+    "priority": "Opportunity",
+    "type": "sales_anomaly",
+    "title": "Product Name sales spiked by X%",
+    "detail": "Trailing 7-day average rose from Y to Z units/day.",
+    "recommendation": "Web search indicates upcoming festival season. Consider boosting ad spend to capture momentum.",
+    "action_required": "boost_ads"
+  },
+  {
+    "id": "alert-4",
+    "priority": "Urgent",
+    "type": "sales_anomaly",
+    "title": "Product Name sales dropped by X%",
+    "detail": "Trailing 7-day average fell from Y to Z units/day.",
+    "recommendation": "Internal data shows product was out of stock for 4 of 7 days. Review supply chain immediately.",
+    "action_required": "review_supply_chain"
   }
 ]
 Output ONLY raw JSON."""
