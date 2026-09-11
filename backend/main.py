@@ -551,6 +551,23 @@ def get_morning_brief():
             
         alerts = json.loads(response_text.strip())
         
+        # Build maps for dynamic lookup
+        product_map = {}
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "data", "products.csv"), 'r', encoding='utf-8') as f:
+                for row in csv.DictReader(f):
+                    product_map[row['name'].strip()] = row['id']
+        except:
+            pass
+
+        supplier_map = {}
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "..", "frontend", "data", "suppliers.csv"), 'r', encoding='utf-8') as f:
+                for row in csv.DictReader(f):
+                    supplier_map[row['id']] = {"name": row['name'], "price": int(float(row['price']))}
+        except:
+            pass
+
         # Enrich LLM alerts with real tracked reasoning trail and action details
         all_steps = tracker.get_steps()
         for alert in alerts:
@@ -558,18 +575,49 @@ def get_morning_brief():
             areq = alert.get("action_required", "")
             
             if atype == "stock_risk" or "purchase_order" in areq:
-                alert["reasoning_trail"] = [s for s in all_steps if s["tool"] in ["inventory_analyzer", "supplier_analyzer", "prepare_purchase_order"]]
+                p_name = alert.get("title", "").split(" may")[0].strip()
+                p_id = product_map.get(p_name, "prod-1")
+
+                filtered_steps = []
+                for s in all_steps:
+                    if s["tool"] == "inventory_analyzer":
+                        filtered_steps.append(s)
+                    elif s["tool"] in ["supplier_analyzer", "prepare_purchase_order"]:
+                        if s["input"].get("product_id") == p_id:
+                            filtered_steps.append(s)
+                alert["reasoning_trail"] = filtered_steps
+
                 if "action_details" not in alert:
+                    s_id = "sup-1" # Default to Sharma
+                    for step in alert["reasoning_trail"]:
+                        if step["tool"] == "prepare_purchase_order":
+                            if step["input"].get("product_id") == p_id:
+                                s_id = step["input"].get("supplier_id", "sup-1")
+                                break
+                    
+                    sup_info = supplier_map.get(s_id, {"name": "Sharma Mobile Distributors", "price": 20800})
+                    
                     alert["action_details"] = {
                         "action_type": "approve_purchase_order",
-                        "product_name": alert.get("title", "").split(" may")[0],
-                        "supplier_name": "Sharma Mobile Distributors",
+                        "product_name": p_name,
+                        "supplier_name": sup_info["name"],
                         "quantity": alert.get("suggested_quantity", 20),
-                        "unit_price": 20800,
+                        "unit_price": sup_info["price"],
                         "status": "pending_approval"
                     }
             elif atype in ["receivables", "receivables_risk"] or "reminder" in areq:
-                alert["reasoning_trail"] = [s for s in all_steps if s["tool"] in ["receivables_analyzer", "prepare_payment_reminder"]]
+                # LLM can return "Customer Name is X days overdue" or just use customer_name in details
+                c_name = alert.get("title", "").split(" is")[0].strip()
+                
+                filtered_steps = []
+                for s in all_steps:
+                    if s["tool"] == "receivables_analyzer":
+                        filtered_steps.append(s)
+                    elif s["tool"] == "prepare_payment_reminder":
+                        if s["input"].get("customer_name") == c_name:
+                            filtered_steps.append(s)
+                alert["reasoning_trail"] = filtered_steps
+
                 if "action_details" not in alert:
                     alert["action_details"] = {
                         "action_type": "send_reminder_email",

@@ -169,7 +169,8 @@ export default function AlertCard({ alert }: AlertCardProps) {
     } catch (err: any) {
       console.warn("Backend /approve-action failed or offline, simulating local execution:", err);
       // Seamless fallback simulation for local demo mode
-      const totalAmount = isMonetaryAction ? quantity * 20800 : 22000;
+      const unitPrice = alert.action_details?.unit_price || 20800;
+      const totalAmount = isMonetaryAction ? quantity * unitPrice : 22000;
       setApprovalStatus('approved');
       setApprovalResult({
         status: "executed",
@@ -239,7 +240,7 @@ export default function AlertCard({ alert }: AlertCardProps) {
               min="1"
             />
             <span className="text-xs text-slate-500">
-              Est. Total: ₹{(quantity * 20800).toLocaleString('en-IN')}
+              Est. Total: ₹{(quantity * (alert.action_details?.unit_price || 20800)).toLocaleString('en-IN')}
             </span>
           </div>
         )}
