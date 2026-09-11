@@ -380,6 +380,7 @@ IMPORTANT POLICIES:
 Return a single JSON array of ALL alerts.
 For stock_risk, evaluate days_until_stockout: if < 7 days, set priority to "Urgent". If 7-21 days, set priority to "Attention".
 The `suggested_quantity` for stock_risk alerts MUST be calculated exactly as: (sales_velocity_per_day * 10). For example, if velocity is 2.0/day, suggest 20 units. Do not suggest a 30-day supply.
+For receivables, set priority to "Urgent" if days_overdue > 7, otherwise set to "Attention".
 For sales anomalies, use type "sales_anomaly". If it's an unexplained spike, priority is "Opportunity" and action is "boost_ads". If it's a drop caused by stockouts, priority is "Urgent" and action is "review_supply_chain".
 
 Format Example:
@@ -462,22 +463,25 @@ def build_deterministic_brief() -> List[Dict[str, Any]]:
         if supplier_info:
             rec_sup = supplier_info["recommended_supplier"]
             stock_steps = [s for s in all_steps if s["tool"] in ["inventory_analyzer", "supplier_analyzer", "prepare_purchase_order"] and (s["tool"] == "inventory_analyzer" or s.get("input", {}).get("product_id") == risk_item["product_id"])]
+            
+            calc_quantity = int(risk_item["sales_velocity_per_day"] * 10)
+            
             alerts.append({
                 "id": f"alert-stock-{risk_item['product_id']}",
                 "priority": "Urgent" if risk_item["days_until_stockout"] < 7 else "Attention",
                 "type": "stock_risk",
                 "title": f"{risk_item['name']} may stock out in ~{int(risk_item['days_until_stockout'])} days",
-                "detail": f"Current stock: {risk_item['current_stock']} units. Sales velocity has risen to ~{int(risk_item['sales_velocity_per_day'])}/day over the last 10 days.",
+                "detail": f"Current stock: {risk_item['current_stock']} units. Sales velocity has risen to ~{risk_item['sales_velocity_per_day']}/day over the last 10 days.",
                 "recommendation": supplier_info["reason"],
                 "action_required": "approve_purchase_order",
-                "suggested_quantity": 20,
+                "suggested_quantity": calc_quantity,
                 "action_details": {
                     "action_type": "approve_purchase_order",
                     "product_id": risk_item["product_id"],
                     "product_name": risk_item["name"],
                     "supplier_id": rec_sup["id"],
                     "supplier_name": rec_sup["name"],
-                    "quantity": 20,
+                    "quantity": calc_quantity,
                     "unit_price": int(rec_sup["price"]),
                     "delivery_days": rec_sup["delivery_days"],
                     "status": "pending_approval"
@@ -490,7 +494,7 @@ def build_deterministic_brief() -> List[Dict[str, Any]]:
         rec_steps = [s for s in all_steps if s["tool"] in ["receivables_analyzer", "prepare_payment_reminder"] and (s["tool"] == "receivables_analyzer" or s.get("input", {}).get("customer_name") == rec["customer_name"])]
         alerts.append({
             "id": f"alert-rec-{rec['id']}",
-            "priority": "Urgent",
+            "priority": "Urgent" if rec["days_overdue"] > 7 else "Attention",
             "type": "receivables",
             "title": f"{rec['customer_name']} is {rec['days_overdue']} days overdue",
             "detail": f"Amount: ₹{int(rec['amount_overdue']):,}. Notes: {rec['notes']}",
@@ -639,14 +643,20 @@ def get_morning_brief():
                 alert["reasoning_trail"] = filtered_steps
 
                 if "action_details" not in alert:
-                    alert["action_details"] = {
-                        "action_type": "send_reminder_email",
-                        "customer_name": c_name,
-                        "amount": amount,
-                        "days_overdue": days_overdue,
-                        "draft_message": f"Dear {c_name}, this is a gentle reminder regarding invoice balance of ₹{int(amount):,} which is {days_overdue} days past due. Please remit payment at your earliest convenience.",
-                        "status": "pending_approval"
-                    }
+                    if alert.get("action_required") in ["send_reminder_email", "reminder", "approve_messages"]:
+                        alert["action_details"] = {
+                            "action_type": alert.get("action_required", "send_reminder_email"),
+                            "customer_name": c_name,
+                            "amount": amount,
+                            "days_overdue": days_overdue,
+                            "draft_message": f"Dear {c_name}, this is a gentle reminder regarding invoice balance of ₹{int(amount):,} which is {days_overdue} days past due. Please remit payment at your earliest convenience.",
+                            "status": "pending_approval"
+                        }
+                    else:
+                        alert["action_details"] = {
+                            "action_type": alert.get("action_required", "acknowledge"),
+                            "status": "acknowledged"
+                        }
             elif atype == "sales_anomaly" and alert.get("priority") == "Opportunity":
                 alert["reasoning_trail"] = [s for s in all_steps if s["tool"] in ["sales_analyzer", "external_context_search"]]
             else:

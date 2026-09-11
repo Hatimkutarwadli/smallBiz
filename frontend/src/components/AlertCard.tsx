@@ -75,8 +75,8 @@ export default function AlertCard({ alert }: AlertCardProps) {
   }
 
   // Check if action requires gating (spends money or contacts customer)
-  const isMonetaryAction = alert.action_required === 'approve_purchase_order' || alert.type === 'stock_risk';
-  const isCustomerContactAction = alert.action_required === 'send_reminder_email' || alert.action_required === 'approve_messages' || alert.type === 'receivables';
+  const isMonetaryAction = alert.action_required === 'approve_purchase_order';
+  const isCustomerContactAction = alert.action_required === 'send_reminder_email' || alert.action_required === 'approve_messages';
   const isGatedAction = isMonetaryAction || isCustomerContactAction;
 
   // Fallback reasoning steps if not present in payload
